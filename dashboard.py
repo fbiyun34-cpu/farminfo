@@ -483,22 +483,36 @@ elif "상품" in menu:
         
         # 2. Product Portfolio Map (Treemap)
         st.markdown("##### 2. 상품 포트폴리오 맵 (Treemap)")
-        st.caption("계층: 등급 > 상품명 | 크기: 매출액 | 색상: 마진 (붉은색일수록 고마진)")
+        st.caption("계층: 등급 > 상품명 | 크기: 매출액 | 색상: 마진율 (초록색=고수익, 붉은색=저수익)")
         
-        # Treemap requires non-negative values for size. Filter out negative sales if any.
-        tree_df = prod_stats[prod_stats['실결제 금액'] > 0]
+        # Treemap requires non-negative values for size. Filter out negative sales.
+        tree_df = prod_stats[prod_stats['실결제 금액'] > 0].copy()
         
+        # Calculate Margin Rate for Color
+        tree_df['마진율'] = (tree_df['마진'] / tree_df['실결제 금액']) * 100
+        tree_df['마진율'] = tree_df['마진율'].fillna(0)
+        
+        # Format for Hover
+        tree_df['매출액_fmt'] = tree_df['실결제 금액'].apply(lambda x: f"{x:,.0f}원")
+        tree_df['마진_fmt'] = tree_df['마진'].apply(lambda x: f"{x:,.0f}원")
+        tree_df['마진율_fmt'] = tree_df['마진율'].apply(lambda x: f"{x:.1f}%")
+        tree_df['주문수_fmt'] = tree_df['주문수량'].apply(lambda x: f"{x:,.0f}개")
+
         fig_treemap = px.treemap(
             tree_df,
             path=[px.Constant("전체 상품"), 'Grade', '상품명'],
             values='실결제 금액',
-            color='마진',
+            color='마진율',
             color_continuous_scale='RdYlGn',
-            color_continuous_midpoint=0,
-            hover_data=['주문수량', '주문자명'],
-            title="상품 계층별 매출 및 수익성 분석"
+            color_continuous_midpoint=tree_df['마진율'].median(), # 中間값 기준
+            custom_data=['매출액_fmt', '마진_fmt', '마진율_fmt', '주문수_fmt'],
+            title="상품 계층별 매출 및 수익성(마진율) 분석"
         )
-        fig_treemap.update_traces(textinfo="label+value+percent entry")
+        
+        fig_treemap.update_traces(
+            textinfo="label+value+percent entry",
+            hovertemplate="<b>%{label}</b><br>매출: %{customdata[0]}<br>마진: %{customdata[1]}<br>마진율: %{customdata[2]}<br>주문수: %{customdata[3]}"
+        )
         st.plotly_chart(fig_treemap, use_container_width=True)
         
         # 3. Detailed Data Table
