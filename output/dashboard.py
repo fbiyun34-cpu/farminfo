@@ -489,6 +489,101 @@ elif "채널" in menu:
     )
     st.plotly_chart(fig_scatter, use_container_width=True)
 
+    st.divider()
+
+    # -----------------------------------------------------------
+    # [Regional Expansion Strategy] 🚀 지역 확장 전략
+    # -----------------------------------------------------------
+    st.subheader("🚀 지역 확장 전략 (Regional Expansion Strategy)")
+    
+    if '광역지역' in df_filtered.columns:
+        # 1. Opportunity Map (Matrix)
+        st.write("#### 1. 지역별 성장 기회 (Opportunity Map)")
+        st.caption("주문 건수(X축)와 객단가(Y축)를 비교하여 '숨겨진 고수익 지역'을 찾습니다.")
+        
+        region_matrix = df_filtered.groupby('광역지역').agg({
+            '주문수량': 'sum',
+            '실결제 금액': 'sum',
+            '주문자명': 'nunique'
+        }).reset_index()
+        
+        region_matrix['객단가'] = region_matrix['실결제 금액'] / region_matrix['주문수량']
+        
+        fig_matrix = px.scatter(
+            region_matrix,
+            x='주문수량',
+            y='객단가',
+            text='광역지역',
+            size='실결제 금액',
+            color='실결제 금액',
+            hover_name='광역지역',
+            title='Regional Opportunity Map (Volume vs AOV)'
+        )
+        fig_matrix.update_traces(textposition='top center')
+        st.plotly_chart(fig_matrix, use_container_width=True)
+        
+        # 2. Gap Analysis
+        st.divider()
+        st.write("#### 2. 지역 간 상품 격차 분석 (Gap Analysis)")
+        
+        # Benchmark Region Selection
+        all_regions = region_matrix.sort_values('실결제 금액', ascending=False)['광역지역'].tolist()
+        benchmark_region = "서울특별시" if "서울특별시" in all_regions else all_regions[0]
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            target_region = st.selectbox("공략할 타겟 지역 선택", [r for r in all_regions if r != benchmark_region])
+        with c2:
+             st.info(f"비교 기준: **{benchmark_region}** (매출 1위)")
+             
+        if target_region:
+            # Benchmark Top Products
+            bench_df = df_filtered[df_filtered['광역지역'] == benchmark_region]
+            target_df = df_filtered[df_filtered['광역지역'] == target_region]
+            
+            bench_top = bench_df.groupby('상품명')['실결제 금액'].sum().reset_index().sort_values('실결제 금액', ascending=False).head(20)
+            target_sales = target_df.groupby('상품명')['실결제 금액'].sum().reset_index()
+            
+            # Merge to find gaps
+            gap_df = pd.merge(bench_top, target_sales, on='상품명', how='left', suffixes=('_Bench', '_Target'))
+            gap_df['실결제 금액_Target'] = gap_df['실결제 금액_Target'].fillna(0)
+            
+            # Filter: Benchmark에서 잘 팔리는데 Target에서 저조한 것 (Target 매출이 Benchmark의 10% 미만)
+            gap_ops = gap_df[gap_df['실결제 금액_Target'] < gap_df['실결제 금액_Bench'] * 0.1]
+            
+            if not gap_ops.empty:
+                st.warning(f"🚨 **'{target_region}'에서 놓치고 있는 히트 상품**")
+                st.write(f"서울에서는 인기가 많지만, {target_region}에서는 판매가 저조한 상품들입니다. 프로모션을 고려해보세요.")
+                
+                # Visualization
+                fig_gap = go.Figure()
+                fig_gap.add_trace(go.Bar(
+                    y=gap_ops['상품명'], 
+                    x=gap_ops['실결제 금액_Bench'], 
+                    orientation='h', 
+                    name=benchmark_region,
+                    marker_color='#d3d3d3'
+                ))
+                fig_gap.add_trace(go.Bar(
+                    y=gap_ops['상품명'], 
+                    x=gap_ops['실결제 금액_Target'], 
+                    orientation='h', 
+                    name=target_region,
+                    marker_color='#FF4B4B'
+                ))
+                fig_gap.update_layout(title="매출 격차 (Potential Gap)", barmode='overlay')
+                st.plotly_chart(fig_gap, use_container_width=True)
+                
+                # Action Plan Text
+                top_opp = gap_ops.iloc[0]
+                st.success(f"""
+                **💡 추천 전략:**
+                - **'{top_opp['상품명']}'** 상품을 **{target_region}** 지역 타겟 광고로 노출하세요.
+                - {benchmark_region}에서는 이미 검증된 상품이므로, 노출만 늘리면 매출 상승 가능성이 높습니다.
+                """)
+            else:
+                st.info(f"{target_region}은(는) {benchmark_region}의 인기 상품 트렌드를 잘 따라가고 있습니다.")
+
 elif "고객" in menu:
     # [View 4] 👥 고객 분석 Analysis
     st.header("👥 고객 데이터 분석 (Customer Data)")
