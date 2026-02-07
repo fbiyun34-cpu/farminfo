@@ -516,7 +516,7 @@ elif "채널" in menu:
                 )
             
             with strat_col2:
-                st.markdown(f"#### 🧠 전문가 전략 리포트")
+                st.markdown(f"#### 전략 리포트")
                 st.caption(f"🎯 타겟 페르소나: **{dominant_age}** | 📢 최적 채널: **{dominant_channel}**")
                 
                 # Dynamic Recommendations
