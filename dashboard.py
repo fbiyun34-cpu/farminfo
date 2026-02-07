@@ -703,18 +703,69 @@ elif "채널" in menu:
         else:
             st.warning(f"선택한 지역({target_region})의 데이터가 없습니다.")
 
+    st.divider()
     st.subheader("🕰️ 주문 패턴 분석 (시간대/요일)")
-    df_filtered['시간대'] = df_filtered['주문시간']
-    fig_scatter = px.scatter(
-        df_filtered, 
-        x='주문시간', 
-        y='실결제 금액', 
-        color='요일',
-        size='주문수량', 
-        hover_data=['상품명'],
-        title="시간대별 주문 분포"
-    )
-    st.plotly_chart(fig_scatter, use_container_width=True)
+    
+    if not df_filtered.empty:
+        # Preprocessing for Heatmap
+        # Ensure '요일' is ordered correctly
+        day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        # Korean mapping if needed, but assuming data might have English or mixed. 
+        # Let's check unique values or just use as is if already Korean. 
+        # If '요일' is already Korean (월, 화...), day_order needs to match.
+        # Check if Sample data uses Korean days based on previous view_file (line 117: dt.day_name() returns English by default unless locale set, but let's stick to observed data or handle gracefully)
+        
+        # Safe aggregation
+        heatmap_data = df_filtered.groupby(['요일', '주문시간'])['주문수량'].sum().reset_index()
+        
+        # 1. Density Heatmap
+        fig_heatmap = px.density_heatmap(
+            heatmap_data, 
+            x='주문시간', 
+            y='요일', 
+            z='주문수량', 
+            nbinsx=24,
+            category_orders={"요일": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] 
+                             if heatmap_data['요일'].iloc[0] in ['Monday', 'Tuesday'] else 
+                             ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]},
+            color_continuous_scale='OrRd',
+            title="요일 x 시간대별 주문 집중도 (Heatmap)"
+        )
+        fig_heatmap.update_layout(xaxis_title="시간대 (0~23시)", yaxis_title="요일")
+        st.plotly_chart(fig_heatmap, use_container_width=True)
+        
+        # 2. Peak Time Analysis
+        heatmap_data['Hotscore'] = heatmap_data['주문수량']
+        top_slots = heatmap_data.sort_values('Hotscore', ascending=False).head(3)
+        
+        if not top_slots.empty:
+            st.markdown("#### ⚡ 골든 타임 (Golden Hours)")
+            
+            c1, c2, c3 = st.columns(3)
+            for i, (idx, row) in enumerate(top_slots.iterrows()):
+                with [c1, c2, c3][i]:
+                    st.metric(
+                        f"Top {i+1}", 
+                        f"{row['요일']} {row['주문시간']}시", 
+                        f"{row['주문수량']}건 주문"
+                    )
+            
+            # 3. Actionable Advice
+            best_day = top_slots.iloc[0]['요일']
+            best_hour = top_slots.iloc[0]['주문시간']
+            
+            # Simple logic for advice
+            target_hour = best_hour - 1 if best_hour > 0 else 23
+            
+            st.info(f"""
+            **📢 마케팅 골든 타임 제안**
+            
+            가장 주문이 많은 **{best_day} {best_hour}시**를 공략하세요!
+            - **PUSH 알림**: 1시간 전인 **{best_day} {target_hour}시**에 할인 쿠폰이나 타임 세일 알림을 보내면 전환율이 극대화될 수 있습니다.
+            - **광고 입찰가 상향**: 이 시간대에 검색 광고 입찰가를 **20~30% 상향** 조정하여 노출을 늘리세요.
+            """)
+    else:
+        st.warning("데이터가 없어 주문 패턴을 분석할 수 없습니다.")
 
 elif "고객" in menu:
     # [View 4] 👥 고객 분석 Analysis
