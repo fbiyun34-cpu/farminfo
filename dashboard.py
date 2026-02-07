@@ -1137,44 +1137,38 @@ elif "셀러" in menu:
             significant_gateways = gateway_stats[gateway_stats['신규유입수'] >= 5]
             
             if not significant_gateways.empty:
-                # 4. Success/Analysis Logic
-                # Quadrant Analysis
-                avg_inflow = significant_gateways['신규유입수'].mean()
-                avg_retention = significant_gateways['재구매전환율'].mean()
+
+                # 4. Success/Analysis Logic: Funnel Visualization
+                st.markdown("##### 🏆 Top 5 효자 상품 유입 퍼널 (Acquisition Funnel)")
+                st.caption("각 상품별 **'첫 구매(유입)' → '재구매(정착)'** 로 이어지는 고객 수를 비교합니다.")
                 
-                fig_gw = px.scatter(
-                    significant_gateways,
-                    x='신규유입수',
-                    y='재구매전환율',
-                    size='신규유입수',
-                    color='재구매전환율',
-                    hover_name='상품명',
-                    text='상품명',
-                    title="상품별 신규 유입력(X) vs 단골 전환력(Y)",
-                    labels={'신규유입수': '신규 고객 유입 수 (명)', '재구매전환율': '재구매 전환율 (%)'},
-                    color_continuous_scale='RdBu'
-                )
+                # Filter Top 5 by Inflow
+                top_gateways = significant_gateways.sort_values('신규유입수', ascending=False).head(5)
+                top_gateways['재구매고객수'] = (top_gateways['신규유입수'] * (top_gateways['재구매전환율'] / 100)).astype(int)
                 
-                # Add reference lines
-                fig_gw.add_vline(x=avg_inflow, line_dash="dash", line_color="gray", annotation_text="평균 유입")
-                fig_gw.add_hline(y=avg_retention, line_dash="dash", line_color="gray", annotation_text="평균 전환")
+                fig_funnel = go.Figure()
                 
-                st.plotly_chart(fig_gw, use_container_width=True)
+                for _, row in top_gateways.iterrows():
+                    fig_funnel.add_trace(go.Funnel(
+                        name=row['상품명'],
+                        y=["신규 유입 (명)", "단골 전환 (명)"],
+                        x=[row['신규유입수'], row['재구매고객수']],
+                        textinfo="value+percent initial"
+                    ))
                 
+                fig_funnel.update_layout(title="상품별 유입 및 정착 깔때기 비교")
+                st.plotly_chart(fig_funnel, use_container_width=True)
+
                 # Insight Generation
-                stars = significant_gateways[
-                    (significant_gateways['신규유입수'] >= avg_inflow) & 
-                    (significant_gateways['재구매전환율'] >= avg_retention)
-                ]
+                avg_retention = significant_gateways['재구매전환율'].mean()
+                best_retention_prod = top_gateways.sort_values('재구매전환율', ascending=False).iloc[0]
                 
-                if not stars.empty:
-                    top_star = stars.sort_values('재구매전환율', ascending=False).iloc[0]['상품명']
-                    st.success(f"🏆 **최고의 효자 상품**: '{top_star}' (많이 들어오고, 많이 남습니다!)")
-                    st.info("💡 **전략 제안**: 이 상품을 '첫 구매 전용 딜'로 걸어 광고 효율을 극대화하세요.")
+                st.success(f"💎 **실속 1위**: '{best_retention_prod['상품명']}' (전환율 {best_retention_prod['재구매전환율']:.1f}%)")
+                st.info(f"💡 **분석**: 상위 5개 상품 중 '{best_retention_prod['상품명']}'이 가장 높은 확률로 고객을 단골로 만듭니다.")
                 
-                st.markdown("##### 📋 상세 데이터 (Top 10)")
+                st.markdown("##### 📋 상세 데이터")
                 st.dataframe(
-                    significant_gateways.sort_values('신규유입수', ascending=False).head(10).style.format({'재구매전환율': "{:.1f}%"}),
+                    top_gateways[['상품명', '신규유입수', '재구매고객수', '재구매전환율']].style.format({'재구매전환율': "{:.1f}%"}),
                     use_container_width=True
                 )
             else:
