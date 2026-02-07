@@ -208,6 +208,9 @@ with st.sidebar:
                 mime='text/csv',
                 help="Looker Studio에 직접 파일을 업로드할 때 사용하세요 (UTF-8-SIG 인코딩)"
             )
+            
+        st.divider()
+        st.link_button("🚀 Looker Studio 리포트 생성하기", "https://lookerstudio.google.com/reporting/create")
 
 # 메인 프롬프트 영역
 st.markdown("## 🍊 Farminfo Prompt Analytics")
