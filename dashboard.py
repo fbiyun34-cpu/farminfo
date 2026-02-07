@@ -451,6 +451,103 @@ elif "채널" in menu:
             fig_bar_region.update_traces(marker_color='#FF8C00')
             st.plotly_chart(fig_bar_region, use_container_width=True)
 
+    st.divider()
+
+    # -----------------------------------------------------------
+    # [Regional Expansion Strategy]
+    # -----------------------------------------------------------
+    st.subheader("🗺️ 지역 확장 전략 (Regional Expansion Strategy)")
+    
+    if '광역지역' in df_filtered.columns:
+        # 1. Target Region Selector
+        all_regions = df_filtered['광역지역'].unique().tolist()
+        # Default to the region with highest sales if available, else standard sort
+        default_region = region_stats.iloc[-1]['광역지역'] if not region_stats.empty else all_regions[0]
+        
+        target_region = st.selectbox(
+            "공략할 지역을 선택하세요",
+            all_regions,
+            index=all_regions.index(default_region) if default_region in all_regions else 0
+        )
+        
+        # Filter for Target Region
+        region_df = df_filtered[df_filtered['광역지역'] == target_region]
+        
+        if not region_df.empty:
+            # Expert Analysis Data Prep
+            total_sales_all = df_filtered['실결제 금액'].sum()
+            region_share = current_region_sales / total_sales_all if total_sales_all > 0 else 0
+            
+            # 1. Market Classification
+            if region_share >= 0.10: # 점유율 10% 이상은 핵심 지역
+                region_type = "👑 핵심 거점 (Core Market)"
+                strategy_focus = "충성도 강화 & 객단가 상승 (Lock-in & Up-sell)"
+                growth_rate = 0.15 # 이미 성숙한 시장은 목표 성장률을 조금 낮게 잡음
+            else:
+                region_type = "🌱 성장 잠재 지역 (Growth Market)"
+                strategy_focus = "신규 고객 확보 & 인지도 확대 (Acquisition)"
+                growth_rate = 0.30 # 성장 초기 지역은 공격적인 목표 설정
+
+            # 2. Demographics & Channel
+            dominant_age = region_df['연령대'].value_counts().idxmax() if '연령대' in region_df.columns else "알 수 없음"
+            dominant_channel = region_df['주문경로'].value_counts().idxmax()
+
+            # 3. Top Products & Revenue Projection
+            top3_products = region_df.groupby('상품명')['실결제 금액'].sum().nlargest(3).reset_index()
+            potential_sales = current_region_sales * (1 + growth_rate)
+            upside = potential_sales - current_region_sales
+            
+            # UI Layout
+            strat_col1, strat_col2 = st.columns([1, 2])
+            
+            with strat_col1:
+                st.markdown(f"#### 📊 지역 위상 및 목표")
+                st.info(f"**{region_type}**\n\n매출 비중: **{region_share*100:.1f}%**")
+                
+                st.metric(
+                    "현재 매출", 
+                    f"{current_region_sales:,.0f} 원"
+                )
+                st.metric(
+                    f"목표 매출 (+{growth_rate*100:.0f}%)",
+                    f"{potential_sales:,.0f} 원",
+                    delta=f"+{upside:,.0f} 원"
+                )
+            
+            with strat_col2:
+                st.markdown(f"#### 🧠 전문가 전략 리포트")
+                st.caption(f"🎯 타겟 페르소나: **{dominant_age}** | 📢 최적 채널: **{dominant_channel}**")
+                
+                # Dynamic Recommendations
+                st.markdown(f"**전략 초점: {strategy_focus}**")
+                
+                rec_list = []
+                top_prod_name = top3_products.iloc[0]['상품명']
+                
+                if "핵심" in region_type:
+                    rec_list.append(f"**VIP 마케팅**: {target_region} 내 구매 이력 보유 고객에게 **시크릿 쿠폰** 발송 (재구매 유도)")
+                    rec_list.append(f"**번들링 강화**: 1위 상품인 '{top_prod_name}' 구매 시, 다른 상품 합배송 할인 제안 (객단가 UP)")
+                    rec_list.append(f"**채널 최적화**: {dominant_channel} 채널의 충성 고객 대상으로 멤버십 혜택 혹은 정기 배송 안내")
+                else:
+                    rec_list.append(f"**공격적 침투**: {dominant_channel} 광고 예산을 {target_region} 지역에 집중 집행")
+                    rec_list.append(f"**미끼 상품 전략**: '{top_prod_name}'의 소용량/체험팩을 기획하여 진입 장벽 낮추기")
+                    rec_list.append(f"**로컬 타겟팅**: {target_region} 맘카페/커뮤니티 제휴를 통해 '{target_region} 한정 무료 배송' 이벤트 홍보")
+
+                for i, rec in enumerate(rec_list, 1):
+                    st.write(f"{i}. {rec}")
+                    
+                st.markdown("---")
+                st.write(f"**🏆 {target_region} Best 3**")
+                cols = st.columns(3)
+                for idx, row in top3_products.iterrows():
+                    with cols[idx]:
+                        st.caption(f"{idx+1}위")
+                        st.write(f"**{row['상품명']}**")
+                        st.caption(f"{row['실결제 금액']:,.0f}원")
+
+        else:
+            st.warning(f"선택한 지역({target_region})의 데이터가 없습니다.")
+
     st.subheader("🕰️ 주문 패턴 분석 (시간대/요일)")
     df_filtered['시간대'] = df_filtered['주문시간']
     fig_scatter = px.scatter(
