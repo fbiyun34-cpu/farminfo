@@ -178,6 +178,36 @@ with st.sidebar:
         st.success("Naver API Key Loaded ✅")
     else:
         st.warning("Naver API Key Not Found ⚠️")
+        
+    st.divider()
+    
+    # [NEW] Looker Studio Integration
+    with st.expander("📊 Looker Studio 연동", expanded=False):
+        st.caption("Looker Studio에서 아래 URL을 통해 데이터를 직접 연결할 수 있습니다.")
+        
+        # GitHub Raw Data URL (Dynamically constructed based on repo info)
+        # Assuming the repo is 'fbiyun34-cpu/farminfo' and branch is 'main'
+        raw_url = "https://raw.githubusercontent.com/fbiyun34-cpu/farminfo/main/input/preprocessed_data.csv"
+        
+        st.code(raw_url, language="text")
+        
+        st.markdown("""
+        **연결 방법:**
+        1. Looker Studio > 데이터 추가
+        2. **URL** 커넥터 선택
+        3. 위 링크 붙여넣기
+        """)
+        
+        # Download Button for Manual Upload
+        if 'raw_df' in locals() and not raw_df.empty:
+            csv = raw_df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 데이터 다운로드 (CSV)",
+                data=csv,
+                file_name='farminfo_data_for_looker.csv',
+                mime='text/csv',
+                help="Looker Studio에 직접 파일을 업로드할 때 사용하세요 (UTF-8-SIG 인코딩)"
+            )
 
 # 메인 프롬프트 영역
 st.markdown("## 🍊 Farminfo Prompt Analytics")
