@@ -476,6 +476,7 @@ elif "채널" in menu:
         if not region_df.empty:
             # Expert Analysis Data Prep
             total_sales_all = df_filtered['실결제 금액'].sum()
+            current_region_sales = region_df['실결제 금액'].sum()
             region_share = current_region_sales / total_sales_all if total_sales_all > 0 else 0
             
             # 1. Market Classification
