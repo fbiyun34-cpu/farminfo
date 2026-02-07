@@ -1105,61 +1105,83 @@ elif "셀러" in menu:
         
         st.divider()
 
-        # 7. Market Basket Analysis (Bundle Strategies) [NEW/REPLACEMENT]
-        st.subheader("🛒 장바구니 분석 (Market Basket Analysis)")
-        st.markdown("고객의 **동시 구매 패턴**을 분석하여 객단가(AOV)를 높일 수 있는 **꿀조합 상품**을 제안합니다.")
+
+
+        # 7. Gateway Product Analysis (Acquisition Quality) [NEW/REPLACEMENT]
+        st.subheader("🚪 효자 상품 분석 (Gateway Product Analysis)")
+        st.markdown("우리 가게에 **처음 온 고객**이 무엇을 사고 들어왔는지, 그리고 그 상품이 **단골**을 만들어내는지 분석합니다.")
         
-        if '주문번호' in df_filtered.columns and '상품명' in df_filtered.columns:
-            # 7-1. Single vs Multi-item Order Analysis
-            order_counts = df_filtered.groupby('주문번호')['상품명'].count()
-            multi_item_orders = order_counts[order_counts > 1].index
-            single_item_orders = order_counts[order_counts == 1].index
+        if '주문일' in df_filtered.columns and 'UID' in df_filtered.columns and '상품명' in df_filtered.columns:
+            # 1. Identify First Purchase for each Customer
+            # Sort by UID and Date to find the very first order
+            sorted_df = df_filtered.sort_values(['UID', '주문일'])
+            first_orders = sorted_df.drop_duplicates('UID', keep='first')
             
-            multi_aov = df_filtered[df_filtered['주문번호'].isin(multi_item_orders)]['실결제 금액'].sum() / len(multi_item_orders) if len(multi_item_orders) > 0 else 0
-            single_aov = df_filtered[df_filtered['주문번호'].isin(single_item_orders)]['실결제 금액'].sum() / len(single_item_orders) if len(single_item_orders) > 0 else 0
+            # 2. Check Retention (Did they buy again?)
+            # Count total orders per UID
+            order_counts = df_filtered.groupby('UID')['주문번호'].nunique()
+            retained_uids = order_counts[order_counts > 1].index
             
-            c_b1, c_b2, c_b3 = st.columns(3)
-            c_b1.metric("단품 주문 비중", f"{(len(single_item_orders)/len(order_counts)*100):.1f}%")
-            c_b2.metric("합배송(세트) 주문 비중", f"{(len(multi_item_orders)/len(order_counts)*100):.1f}%")
-            c_b3.metric("세트 구매시 객단가 효과", f"+{((multi_aov - single_aov)/single_aov*100):.1f}%", delta_color="normal")
+            first_orders['IsRetained'] = first_orders['UID'].isin(retained_uids)
             
-            st.info(f"💡 고객이 상품을 묶어 살 때, 단품 구매보다 객단가가 약 **{int(multi_aov - single_aov):,}원** 더 높습니다. 세트 상품 구성이 필수적입니다.")
+            # 3. Aggregation by Gateway Product
+            gateway_stats = first_orders.groupby('상품명').agg({
+                'UID': 'count',          # New Customer Count (Volume)
+                'IsRetained': 'mean'     # Retention Rate (Quality)
+            }).reset_index()
             
-            # 7-2. Top Synergy Pairs (Co-occurrence)
-            from itertools import combinations
-            from collections import Counter
+            gateway_stats.rename(columns={'UID': '신규유입수', 'IsRetained': '재구매전환율'}, inplace=True)
+            gateway_stats['재구매전환율'] = gateway_stats['재구매전환율'] * 100
             
-            # Get list of products per order (only for multi-item orders)
-            # Optimization: Limit to top 1000 orders if too slow, but dataset seems small enough considering context
-            multi_order_df = df_filtered[df_filtered['주문번호'].isin(multi_item_orders)]
+            # Filter for significance (e.g., at least 5 new customers)
+            significant_gateways = gateway_stats[gateway_stats['신규유입수'] >= 5]
             
-            # Group items by order
-            basket_lists = multi_order_df.groupby('주문번호')['상품명'].apply(list)
-            
-            pair_counter = Counter()
-            for items in basket_lists:
-                items = sorted(items) # Sort to ensure (A, B) is same as (B, A)
-                pair_counter.update(combinations(items, 2))
+            if not significant_gateways.empty:
+                # 4. Success/Analysis Logic
+                # Quadrant Analysis
+                avg_inflow = significant_gateways['신규유입수'].mean()
+                avg_retention = significant_gateways['재구매전환율'].mean()
                 
-            top_pairs = pair_counter.most_common(5)
-            
-            st.markdown("##### 🤝 함께 사면 좋은 '꿀조합' Top 5 (Synergy Pairs)")
-            
-            if top_pairs:
-                pair_data = []
-                for (item1, item2), count in top_pairs:
-                    pair_data.append({
-                        '상품 A': item1,
-                        '상품 B': item2,
-                        '동시 구매 횟수': count,
-                        '추천 전략': '번들 할인 패키지 구성 (5~10% 할인)'
-                    })
-                st.dataframe(pd.DataFrame(pair_data), use_container_width=True, hide_index=True)
+                fig_gw = px.scatter(
+                    significant_gateways,
+                    x='신규유입수',
+                    y='재구매전환율',
+                    size='신규유입수',
+                    color='재구매전환율',
+                    hover_name='상품명',
+                    text='상품명',
+                    title="상품별 신규 유입력(X) vs 단골 전환력(Y)",
+                    labels={'신규유입수': '신규 고객 유입 수 (명)', '재구매전환율': '재구매 전환율 (%)'},
+                    color_continuous_scale='RdBu'
+                )
+                
+                # Add reference lines
+                fig_gw.add_vline(x=avg_inflow, line_dash="dash", line_color="gray", annotation_text="평균 유입")
+                fig_gw.add_hline(y=avg_retention, line_dash="dash", line_color="gray", annotation_text="평균 전환")
+                
+                st.plotly_chart(fig_gw, use_container_width=True)
+                
+                # Insight Generation
+                stars = significant_gateways[
+                    (significant_gateways['신규유입수'] >= avg_inflow) & 
+                    (significant_gateways['재구매전환율'] >= avg_retention)
+                ]
+                
+                if not stars.empty:
+                    top_star = stars.sort_values('재구매전환율', ascending=False).iloc[0]['상품명']
+                    st.success(f"🏆 **최고의 효자 상품**: '{top_star}' (많이 들어오고, 많이 남습니다!)")
+                    st.info("💡 **전략 제안**: 이 상품을 '첫 구매 전용 딜'로 걸어 광고 효율을 극대화하세요.")
+                
+                st.markdown("##### 📋 상세 데이터 (Top 10)")
+                st.dataframe(
+                    significant_gateways.sort_values('신규유입수', ascending=False).head(10).style.format({'재구매전환율': "{:.1f}%"}),
+                    use_container_width=True
+                )
             else:
-                st.warning("동시 구매 데이터가 충분하지 않아 조합을 추천할 수 없습니다.")
+                st.warning("분석할 만큼 데이터가 충분하지 않습니다 (상품별 신규 유입 5건 이상 필요).")
                 
         else:
-            st.warning("주문번호 또는 상품명 데이터가 없어 장바구니 분석을 수행할 수 없습니다.")
+            st.warning("주문일, UID, 상품명 데이터가 필요합니다.")
 
         st.divider()
         
