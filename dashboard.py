@@ -546,52 +546,51 @@ elif "채널" in menu:
                         st.write(f"**{row['상품명']}**")
                         st.caption(f"{row['실결제 금액']:,.0f}원")
 
-                st.markdown("---")
+            st.markdown("---")
+            
+            # [Age Group Strategy Analysis]
+            st.subheader(f"👥 {target_region} 연령별 공략 전략")
+            
+            if '연령대' in region_df.columns:
+                # 1. Age Distribution Chart
+                age_dist = region_df.groupby('연령대')['실결제 금액'].sum().reset_index()
                 
-                # [Age Group Strategy Analysis]
-                st.subheader(f"👥 {target_region} 연령별 공략 전략")
+                age_col1, age_col2 = st.columns([1, 1])
                 
-                if '연령대' in region_df.columns:
-                    # 1. Age Distribution Chart
-                    age_dist = region_df.groupby('연령대')['실결제 금액'].sum().reset_index()
+                with age_col1:
+                     fig_age_donut = px.pie(
+                        age_dist, 
+                        values='실결제 금액', 
+                        names='연령대', 
+                        hole=0.4,
+                        title=f"{target_region} 연령별 매출 비중",
+                        color_discrete_sequence=px.colors.sequential.Oranges
+                    )
+                     st.plotly_chart(fig_age_donut, use_container_width=True)
+                
+                with age_col2:
+                    # 2. Dominant Age & Tactics
+                    st.markdown(f"#### 🎯 핵심 타겟: {dominant_age}")
                     
-                    age_col1, age_col2 = st.columns([1, 1])
+                    tactics = {
+                        "20대": "📱 **인스타/TikTok 숏폼 마케팅**: '감성 패키지'와 '가성비 못난이 과일' 소구 포인트 강조",
+                        "30대": "🏢 **직장인/육아맘 타겟**: '아이 간식', '사무실 공동구매' 키워드로 맘카페 및 당근마켓 광고",
+                        "40대": "👨‍👩‍👧‍👦 **가족 건강/선물**: '부모님 선물', '제철 보양' 메시지로 밴드(BAND) 및 카카오톡 선물하기 유도",
+                        "50대": "🏔️ **동호회/커뮤니티**: 등산/골프 동호회 제휴 및 '단체 주문 할인' 프로모션 전개",
+                        "60대 이상": "📞 **전화 주문/지인 추천**: 가독성 좋은 이미지 문자와 전화 주문 전용 핫라인 운영"
+                    }
                     
-                    with age_col1:
-                         fig_age_donut = px.pie(
-                            age_dist, 
-                            values='실결제 금액', 
-                            names='연령대', 
-                            hole=0.4,
-                            title=f"{target_region} 연령별 매출 비중",
-                            color_discrete_sequence=px.colors.sequential.Oranges
-                        )
-                         st.plotly_chart(fig_age_donut, use_container_width=True)
+                    selected_tactic = tactics.get(dominant_age, "모든 연령층을 아우르는 대중적인 마케팅 전개")
                     
-                    with age_col2:
-                        # 2. Dominant Age & Tactics
-                        # dominant_age is already calculated above as 'dominant_age'
-                        st.markdown(f"#### 🎯 핵심 타겟: {dominant_age}")
-                        
-                        tactics = {
-                            "20대": "📱 **인스타/TikTok 숏폼 마케팅**: '감성 패키지'와 '가성비 못난이 과일' 소구 포인트 강조",
-                            "30대": "🏢 **직장인/육아맘 타겟**: '아이 간식', '사무실 공동구매' 키워드로 맘카페 및 당근마켓 광고",
-                            "40대": "👨‍👩‍👧‍👦 **가족 건강/선물**: '부모님 선물', '제철 보양' 메시지로 밴드(BAND) 및 카카오톡 선물하기 유도",
-                            "50대": "🏔️ **동호회/커뮤니티**: 등산/골프 동호회 제휴 및 '단체 주문 할인' 프로모션 전개",
-                            "60대 이상": "📞 **전화 주문/지인 추천**: 가독성 좋은 이미지 문자와 전화 주문 전용 핫라인 운영"
-                        }
-                        
-                        selected_tactic = tactics.get(dominant_age, "모든 연령층을 아우르는 대중적인 마케팅 전개")
-                        
-                        st.info(f"**💡 {dominant_age} 맞춤 공략법**\n\n{selected_tactic}")
-                        
-                        # Show Top Product for this Age Group in this Region
-                        age_specific_df = region_df[region_df['연령대'] == dominant_age]
-                        if not age_specific_df.empty:
-                            top_age_prod = age_specific_df.groupby('상품명')['실결제 금액'].sum().idxmax()
-                            st.success(f"🔥 **{dominant_age} 최다 구매 상품**: {top_age_prod}")
-                else:
-                    st.info("연령대 데이터가 없어 상세 전략을 수립할 수 없습니다.")
+                    st.info(f"**💡 {dominant_age} 맞춤 공략법**\n\n{selected_tactic}")
+                    
+                    # Show Top Product for this Age Group in this Region
+                    age_specific_df = region_df[region_df['연령대'] == dominant_age]
+                    if not age_specific_df.empty:
+                        top_age_prod = age_specific_df.groupby('상품명')['실결제 금액'].sum().idxmax()
+                        st.success(f"🔥 **{dominant_age} 최다 구매 상품**: {top_age_prod}")
+            else:
+                st.info("연령대 데이터가 없어 상세 전략을 수립할 수 없습니다.")
 
         else:
             st.warning(f"선택한 지역({target_region})의 데이터가 없습니다.")
