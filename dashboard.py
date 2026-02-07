@@ -769,115 +769,169 @@ elif "채널" in menu:
         st.warning("데이터가 없어 주문 패턴을 분석할 수 없습니다.")
 
 elif "고객" in menu:
-    # [View 4] 👥 고객 분석 Analysis (Advanced)
+    # [View 4] 👥 고객 분석 Analysis (Comprehensive)
     st.header("👥 고객 데이터 분석 (Customer Intelligence)")
-    
+
     if not df_filtered.empty:
         max_date = df_filtered['주문일'].max()
         
-        # 1. RFM Segmentation
-        st.subheader("💎 RFM 고객 세분화 (Customer Segmentation)")
+        # Tabs for organized view
+        tab1, tab2, tab3 = st.tabs(["📊 기본 분석 (Basic)", "💎 고급 분석 (VIP/Retention)", "✨ 심층 인사이트 (Deep Dive)"])
         
-        # Calculate RFM metrics
-        rfm = df_filtered.groupby('UID').agg({
-            '주문일': lambda x: (max_date - x.max()).days, # Recency
-            '주문번호': 'count', # Frequency
-            '실결제 금액': 'sum' # Monetary
-        }).reset_index()
-        
-        rfm.rename(columns={'주문일': 'Recency', '주문번호': 'Frequency', '실결제 금액': 'Monetary'}, inplace=True)
-        
-        # Simple Rule-based Segmentation
-        def assign_rfm_segment(row):
-            if row['Recency'] > 90:
-                if row['Monetary'] > 200000: return '이탈 우려 (VIP)'
-                else: return '이탈 고객 (Lost)'
-            else:
-                if row['Monetary'] > 300000: return 'VIP (최상위)'
-                elif row['Frequency'] >= 3: return '충성 고객 (Loyal)'
-                elif row['Recency'] <= 30: return '신규/최근 (New)'
-                else: return '일반 (Regular)'
-
-        rfm['Segment'] = rfm.apply(assign_rfm_segment, axis=1)
-        
-        # Visualize Segments
-        seg_counts = rfm['Segment'].value_counts().reset_index()
-        seg_counts.columns = ['Segment', 'Count']
-        
-        col_rfm1, col_rfm2 = st.columns([1, 1])
-        with col_rfm1:
-            fig_rfm = px.pie(
-                seg_counts, 
-                values='Count', 
-                names='Segment', 
-                title="고객 등급별 비중",
-                hole=0.4,
-                color_discrete_sequence=px.colors.qualitative.Pastel
-            )
-            st.plotly_chart(fig_rfm, use_container_width=True)
+        # --- Tab 1: Basic Analysis (Restored) ---
+        with tab1:
+            st.subheader("🔄 재구매율 및 인구통계 분석")
             
-        with col_rfm2:
-            st.markdown("#### 📢 등급별 관리 전략")
-            st.info("""
-            - **💎 VIP**: 전용 핫라인 및 시크릿 쿠폰 제공 (관리 1순위)
-            - **💖 충성**: 정기 구독 서비스 제안 및 지인 추천 유도
-            - **🌱 신규**: 2번째 구매 유도를 위한 '깜짝 선물' 증정
-            - **⚠️ 이탈 우려**: '그리운 고객님' 안부 문자 및 복귀 쿠폰 발송
-            """)
+            # 1. Repurchase Rate
+            if '재구매 횟수' in df_filtered.columns and 'UID' in df_filtered.columns:
+                cust_stats = df_filtered.groupby('UID')['재구매 횟수'].max().reset_index()
+                total_customers = len(cust_stats)
+                returning_customers = len(cust_stats[cust_stats['재구매 횟수'] > 0])
+                repurchase_rate = (returning_customers / total_customers * 100) if total_customers > 0 else 0
+                
+                c1, c2, c3 = st.columns(3)
+                c1.metric("전체 고객", f"{total_customers:,}명")
+                c2.metric("재구매 고객", f"{returning_customers:,}명")
+                c3.metric("재구매율", f"{repurchase_rate:.1f}%")
+                
+                col_chart1, col_chart2 = st.columns(2)
+                with col_chart1:
+                    vals = [total_customers - returning_customers, returning_customers]
+                    fig_pie = px.pie(
+                        values=vals, 
+                        names=['신규 (1회)', '재구매 (2회+)'], 
+                        hole=0.4, 
+                        title="신규 vs 재구매 비율",
+                        color_discrete_sequence=['#E0E0E0', '#FF7F50']
+                    )
+                    st.plotly_chart(fig_pie, use_container_width=True)
+                with col_chart2:
+                    st.info("💡 **재구매 유도 팁**\n\n재구매율이 30% 미만이라면 '첫 구매 감사 쿠폰' 발송을 자동화해보세요.")
 
-        st.divider()
+            st.divider()
 
-        # 2. Cohort Analysis (Retention Heatmap)
-        st.subheader("📅 코호트 분석 (Retention Heatmap)")
-        
-        # Calculate Cohort Month (First Order Month)
-        df_filtered['OrderMonth'] = df_filtered['주문일'].dt.to_period('M')
-        df_filtered['CohortMonth'] = df_filtered.groupby('UID')['주문일'].transform('min').dt.to_period('M')
-        
-        cohort_data = df_filtered.groupby(['CohortMonth', 'OrderMonth'])['UID'].nunique().reset_index()
-        cohort_data['Period'] = (cohort_data['OrderMonth'] - cohort_data['CohortMonth']).apply(lambda x: x.n)
-        
-        cohort_pivot = cohort_data.pivot_table(index='CohortMonth', columns='Period', values='UID')
-        cohort_size = cohort_pivot.iloc[:, 0]
-        retention = cohort_pivot.divide(cohort_size, axis=0)
-        
-        # Heatmap
-        fig_cohort = px.imshow(
-            retention,
-            labels=dict(x="경과 개월 수 (Month 0 = 가입월)", y="가입 월 (Cohort)", color="잔존율"),
-            x=retention.columns,
-            y=retention.index.astype(str),
-            color_continuous_scale='Blues',
-            text_auto='.1%'
-        )
-        fig_cohort.update_layout(title="가입 시기별 고객 잔존율(%)")
-        st.plotly_chart(fig_cohort, use_container_width=True)
+            # 2. Age & Gender (if available)
+            if '연령대' in df_filtered.columns:
+                col_age1, col_age2 = st.columns(2)
+                with col_age1:
+                    age_sales = df_filtered.groupby('연령대')['실결제 금액'].sum().reset_index()
+                    fig_age = px.pie(age_sales, values='실결제 금액', names='연령대', title="연령별 매출 비중", hole=0.4)
+                    st.plotly_chart(fig_age, use_container_width=True)
+                with col_age2:
+                    age_aov = df_filtered.groupby('연령대')['실결제 금액'].mean().reset_index()
+                    fig_aov = px.bar(age_aov, x='연령대', y='실결제 금액', title="연령별 객단가 비교", color='실결제 금액')
+                    st.plotly_chart(fig_aov, use_container_width=True)
+            else:
+                st.warning("연령대 데이터가 없습니다.")
 
-        st.divider()
+        # --- Tab 2: Advanced Analysis (RFM & Cohort) ---
+        with tab2:
+            # 1. RFM Segmentation
+            st.subheader("💎 RFM 고객 세분화")
+            
+            rfm = df_filtered.groupby('UID').agg({
+                '주문일': lambda x: (max_date - x.max()).days, # Recency
+                '주문번호': 'count', # Frequency
+                '실결제 금액': 'sum' # Monetary
+            }).reset_index()
+            rfm.rename(columns={'주문일': 'Recency', '주문번호': 'Frequency', '실결제 금액': 'Monetary'}, inplace=True)
+            
+            def assign_rfm_segment(row):
+                if row['Recency'] > 90:
+                    if row['Monetary'] > 200000: return '이탈 우려 (VIP)'
+                    else: return '이탈 고객 (Lost)'
+                else:
+                    if row['Monetary'] > 300000: return 'VIP (최상위)'
+                    elif row['Frequency'] >= 3: return '충성 고객 (Loyal)'
+                    elif row['Recency'] <= 30: return '신규/최근 (New)'
+                    else: return '일반 (Regular)'
 
-        # 3. Top Spenders & CLV Proxy
-        st.subheader("🏆 VIP 고객 분석 (Top Spenders)")
-        
-        top_vips = rfm.sort_values('Monetary', ascending=False).head(10)
-        
-        # Calculate Avg Purchase Cycle for Top VIPs
-        vip_ids = top_vips['UID'].tolist()
-        vip_orders = df_filtered[df_filtered['UID'].isin(vip_ids)].sort_values(['UID', '주문일'])
-        vip_orders['PrevOrderDate'] = vip_orders.groupby('UID')['주문일'].shift(1)
-        vip_orders['DaysBetween'] = (vip_orders['주문일'] - vip_orders['PrevOrderDate']).dt.days
-        
-        avg_cycle = vip_orders.groupby('UID')['DaysBetween'].mean()
-        top_vips = top_vips.merge(avg_cycle.rename('AvgCycle'), on='UID', how='left')
-        
-        st.dataframe(
-            top_vips[['UID', 'Segment', 'Monetary', 'Frequency', 'AvgCycle']].style.format({
-                'Monetary': "{:,.0f}원",
-                'AvgCycle': "{:.1f}일"
-            }),
-            use_container_width=True,
-            hide_index=True
-        )
-        st.caption("* AvgCycle: 해당 고객의 평균 재구매 주기 (일 단위)")
+            rfm['Segment'] = rfm.apply(assign_rfm_segment, axis=1)
+            
+            col_rfm1, col_rfm2 = st.columns([1, 1])
+            with col_rfm1:
+                seg_counts = rfm['Segment'].value_counts().reset_index()
+                seg_counts.columns = ['Segment', 'Count']
+                fig_rfm = px.pie(seg_counts, values='Count', names='Segment', title="고객 등급별 비중", hole=0.4)
+                st.plotly_chart(fig_rfm, use_container_width=True)
+            with col_rfm2:
+                st.markdown("#### 📢 등급별 관리 전략")
+                st.info("""
+                - **💎 VIP**: 전용 핫라인 및 시크릿 쿠폰 제공
+                - **💖 충성**: 정기 구독 서비스 제안
+                - **🌱 신규**: 'n번째 구매' 달성 프로모션
+                - **⚠️ 이탈**: 웰컴백 쿠폰 자동 발송
+                """)
+
+            st.divider()
+
+            # 2. Cohort Analysis
+            st.subheader("📅 코호트 잔존율 (Cohort Retention)")
+            df_filtered['OrderMonth'] = df_filtered['주문일'].dt.to_period('M')
+            df_filtered['CohortMonth'] = df_filtered.groupby('UID')['주문일'].transform('min').dt.to_period('M')
+            
+            cohort_data = df_filtered.groupby(['CohortMonth', 'OrderMonth'])['UID'].nunique().reset_index()
+            cohort_data['Period'] = (cohort_data['OrderMonth'] - cohort_data['CohortMonth']).apply(lambda x: x.n)
+            
+            cohort_pivot = cohort_data.pivot_table(index='CohortMonth', columns='Period', values='UID')
+            cohort_size = cohort_pivot.iloc[:, 0]
+            retention = cohort_pivot.divide(cohort_size, axis=0)
+            
+            fig_cohort = px.imshow(
+                retention,
+                labels=dict(x="경과 개월 수", y="가입 월", color="잔존율"),
+                x=retention.columns,
+                y=retention.index.astype(str),
+                color_continuous_scale='Blues',
+                text_auto='.1%'
+            )
+            st.plotly_chart(fig_cohort, use_container_width=True)
+
+        # --- Tab 3: Additional Insights (New) ---
+        with tab3:
+            st.subheader("✨ 3가지 추가 인사이트 (Deep Dive)")
+            
+            # Insight 1: Geo-Distribution
+            st.markdown("##### 1. 📍 지역별 고객 분포 (Top Regions)")
+            if '지역' in df_filtered.columns:
+                geo_dist = df_filtered.groupby('지역')['UID'].nunique().reset_index().sort_values('UID', ascending=False).head(10)
+                fig_geo = px.bar(geo_dist, x='지역', y='UID', title="지역별 고객 수 Top 10", color='UID', color_continuous_scale='Viridis')
+                st.plotly_chart(fig_geo, use_container_width=True)
+            else:
+                st.info("지역 데이터가 없어 분석할 수 없습니다.")
+                
+            st.divider()
+
+            # Insight 2: Purchase Time Pattern (VIP vs Regular)
+            st.markdown("##### 2. ⏰ VIP 고객의 주 구매 시간대")
+            df_filtered['Hour'] = df_filtered['주문일'].dt.hour
+            
+            # Join segment info back to main df
+            rfm_map = rfm[['UID', 'Segment']]
+            df_seg = df_filtered.merge(rfm_map, on='UID', how='left')
+            
+            vip_hourly = df_seg[df_seg['Segment'].str.contains('VIP')].groupby('Hour')['주문번호'].count().reset_index()
+            reg_hourly = df_seg[~df_seg['Segment'].str.contains('VIP')].groupby('Hour')['주문번호'].count().reset_index()
+            
+            fig_time = go.Figure()
+            fig_time.add_trace(go.Scatter(x=vip_hourly['Hour'], y=vip_hourly['주문번호'], mode='lines+markers', name='VIP 고객', line=dict(color='gold', width=3)))
+            fig_time.add_trace(go.Scatter(x=reg_hourly['Hour'], y=reg_hourly['주문번호'], mode='lines', name='일반 고객', line=dict(color='grey', dash='dot')))
+            fig_time.update_layout(title="시간대별 주문 패턴 비교 (VIP vs 일반)", xaxis_title="시간 (0~23시)", yaxis_title="주문 건수")
+            st.plotly_chart(fig_time, use_container_width=True)
+            st.caption("* VIP 고객이 활동하는 골든 타임을 파악하여 타임딜을 기획하세요.")
+            
+            st.divider()
+
+            # Insight 3: Category Preference
+            st.markdown("##### 3. 🛍️ VIP 선호 카테고리 (Category Preference)")
+            # Assuming '카테고리' column exists, or use '상품명' top keywords if not
+            target_col = '카테고리' if '카테고리' in df_filtered.columns else '상품명'
+            
+            vip_pref = df_seg[df_seg['Segment'].str.contains('VIP')][target_col].value_counts().head(5).reset_index()
+            vip_pref.columns = [target_col, 'Count']
+            
+            fig_cat = px.bar(vip_pref, x='Count', y=target_col, orientation='h', title=f"VIP 고객이 가장 많이 산 {target_col}", color='Count')
+            st.plotly_chart(fig_cat, use_container_width=True)
 
     else:
         st.warning("분석할 고객 데이터가 없습니다.")
