@@ -481,25 +481,25 @@ elif "상품" in menu:
 
         st.divider()
         
-        # 2. Product Performance Matrix (BCG Matrix Style)
-        st.markdown("##### 2. 상품 포트폴리오 매트릭스")
-        st.caption("X축: 주문 수량(인기), Y축: 총 매출액(수익규모), 원 크기: 마진(수익성)")
+        # 2. Product Portfolio Map (Treemap)
+        st.markdown("##### 2. 상품 포트폴리오 맵 (Treemap)")
+        st.caption("계층: 등급 > 상품명 | 크기: 매출액 | 색상: 마진 (붉은색일수록 고마진)")
         
-        fig_matrix = px.scatter(
-            prod_stats,
-            x='주문수량',
-            y='실결제 금액',
-            size='마진' if prod_stats['마진'].sum() > 0 else '실결제 금액',
-            color='Grade',
-            hover_name='상품명',
-            text='상품명',
-            log_x=True, # Log scale usually better for sales data
-            log_y=True,
-            title="Sales Quantity vs Revenue Amount",
-            color_discrete_map={'A (핵심)': '#E74C3C', 'B (일반)': '#F1C40F', 'C (부진)': '#95A5A6'}
+        # Treemap requires non-negative values for size. Filter out negative sales if any.
+        tree_df = prod_stats[prod_stats['실결제 금액'] > 0]
+        
+        fig_treemap = px.treemap(
+            tree_df,
+            path=[px.Constant("전체 상품"), 'Grade', '상품명'],
+            values='실결제 금액',
+            color='마진',
+            color_continuous_scale='RdYlGn',
+            color_continuous_midpoint=0,
+            hover_data=['주문수량', '주문자명'],
+            title="상품 계층별 매출 및 수익성 분석"
         )
-        fig_matrix.update_traces(textposition='top center')
-        st.plotly_chart(fig_matrix, use_container_width=True)
+        fig_treemap.update_traces(textinfo="label+value+percent entry")
+        st.plotly_chart(fig_treemap, use_container_width=True)
         
         # 3. Detailed Data Table
         st.markdown("##### 3. 상품별 상세 지표")
