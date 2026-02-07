@@ -1105,122 +1105,61 @@ elif "셀러" in menu:
         
         st.divider()
 
-        # 7. Seller-Region Correlation Analysis [NEW]
-        st.subheader("🗺️ 셀러-지역 상관관계 (Regional Dominance)")
+        # 7. Market Basket Analysis (Bundle Strategies) [NEW/REPLACEMENT]
+        st.subheader("🛒 장바구니 분석 (Market Basket Analysis)")
+        st.markdown("고객의 **동시 구매 패턴**을 분석하여 객단가(AOV)를 높일 수 있는 **꿀조합 상품**을 제안합니다.")
         
-        if '지역' in df_filtered.columns:
-            # Prepare Data: Sales by Seller & Region
-            # Filter Top 10 Sellers & Top 10 Regions to prevent overcrowding
-            top_sellers_list = df_filtered.groupby('셀러명')['실결제 금액'].sum().nlargest(10).index
-            top_regions_list = df_filtered.groupby('지역')['실결제 금액'].sum().nlargest(10).index
+        if '주문번호' in df_filtered.columns and '상품명' in df_filtered.columns:
+            # 7-1. Single vs Multi-item Order Analysis
+            order_counts = df_filtered.groupby('주문번호')['상품명'].count()
+            multi_item_orders = order_counts[order_counts > 1].index
+            single_item_orders = order_counts[order_counts == 1].index
             
-            sr_df = df_filtered[
-                (df_filtered['셀러명'].isin(top_sellers_list)) & 
-                (df_filtered['지역'].isin(top_regions_list))
-            ]
+            multi_aov = df_filtered[df_filtered['주문번호'].isin(multi_item_orders)]['실결제 금액'].sum() / len(multi_item_orders) if len(multi_item_orders) > 0 else 0
+            single_aov = df_filtered[df_filtered['주문번호'].isin(single_item_orders)]['실결제 금액'].sum() / len(single_item_orders) if len(single_item_orders) > 0 else 0
             
-            sr_pivot = sr_df.pivot_table(index='셀러명', columns='지역', values='실결제 금액', aggfunc='sum', fill_value=0)
+            c_b1, c_b2, c_b3 = st.columns(3)
+            c_b1.metric("단품 주문 비중", f"{(len(single_item_orders)/len(order_counts)*100):.1f}%")
+            c_b2.metric("합배송(세트) 주문 비중", f"{(len(multi_item_orders)/len(order_counts)*100):.1f}%")
+            c_b3.metric("세트 구매시 객단가 효과", f"+{((multi_aov - single_aov)/single_aov*100):.1f}%", delta_color="normal")
             
-            # 7-1. Heatmap
-            fig_sr = px.imshow(
-                sr_pivot,
-                labels=dict(x="지역", y="셀러명", color="매출액"),
-                x=sr_pivot.columns,
-                y=sr_pivot.index,
-                color_continuous_scale='Reds',
-                aspect='auto'
-            )
-            fig_sr.update_layout(title="Top 10 셀러의 지역별 매출 집중도")
-            st.plotly_chart(fig_sr, use_container_width=True)
+            st.info(f"💡 고객이 상품을 묶어 살 때, 단품 구매보다 객단가가 약 **{int(multi_aov - single_aov):,}원** 더 높습니다. 세트 상품 구성이 필수적입니다.")
             
-            # 7-2. Dominant Sellers (Local Kings)
-            st.markdown("##### 👑 지역별 지배자 (Local King)")
+            # 7-2. Top Synergy Pairs (Co-occurrence)
+            from itertools import combinations
+            from collections import Counter
             
-            # Calculate market share per region
-            region_totals = df_filtered.groupby('지역')['실결제 금액'].sum()
-            dominant_list = []
+            # Get list of products per order (only for multi-item orders)
+            # Optimization: Limit to top 1000 orders if too slow, but dataset seems small enough considering context
+            multi_order_df = df_filtered[df_filtered['주문번호'].isin(multi_item_orders)]
             
-            for region in top_regions_list:
-                region_data = df_filtered[df_filtered['지역'] == region]
-                if region_data.empty: continue
+            # Group items by order
+            basket_lists = multi_order_df.groupby('주문번호')['상품명'].apply(list)
+            
+            pair_counter = Counter()
+            for items in basket_lists:
+                items = sorted(items) # Sort to ensure (A, B) is same as (B, A)
+                pair_counter.update(combinations(items, 2))
                 
-                top_seller_in_region = region_data.groupby('셀러명')['실결제 금액'].sum().idxmax()
-                top_seller_sales = region_data.groupby('셀러명')['실결제 금액'].sum().max()
-                total_region_sales = region_totals[region]
-                
-                share = (top_seller_sales / total_region_sales) * 100
-                
-                # Threshold for dominance: > 20% share (adjustable)
-                if share >= 20: 
-                    dominant_list.append({
-                        '지역': region,
-                        '지배자(셀러)': top_seller_in_region,
-                        '점유율': f"{share:.1f}%",
-                        '매출': f"{top_seller_sales:,.0f}원"
+            top_pairs = pair_counter.most_common(5)
+            
+            st.markdown("##### 🤝 함께 사면 좋은 '꿀조합' Top 5 (Synergy Pairs)")
+            
+            if top_pairs:
+                pair_data = []
+                for (item1, item2), count in top_pairs:
+                    pair_data.append({
+                        '상품 A': item1,
+                        '상품 B': item2,
+                        '동시 구매 횟수': count,
+                        '추천 전략': '번들 할인 패키지 구성 (5~10% 할인)'
                     })
-            
-            if dominant_list:
-                st.success(f"총 {len(dominant_list)}개 지역에서 압도적 점유율(20% 이상)을 가진 '로컬 킹' 셀러가 발견되었습니다.")
-                st.dataframe(pd.DataFrame(dominant_list), use_container_width=True)
+                st.dataframe(pd.DataFrame(pair_data), use_container_width=True, hide_index=True)
             else:
-                st.info("특정 지역을 독점(점유율 20% 이상)하는 셀러가 없습니다. 시장이 고르게 경쟁 중입니다.")
-            
-            st.divider()
-
-            # 7-3. Seller Reach Inference (Local vs National) [NEW]
-            st.subheader("🚀 셀러 확장 단계 진단 (Seller Reach Inference)")
-            st.markdown("고객의 지역 분포를 기반으로 셀러의 **사업 확장 단계**를 추론하고, 맞춤 전략을 제안합니다.")
-            
-            reach_data = []
-            
-            # Analyze reach for Top 20 Sellers
-            target_sellers = df_filtered.groupby('셀러명')['실결제 금액'].sum().nlargest(20).index
-            
-            for seller in target_sellers:
-                s_data = df_filtered[df_filtered['셀러명'] == seller]
-                total_s_sales = s_data['실결제 금액'].sum()
+                st.warning("동시 구매 데이터가 충분하지 않아 조합을 추천할 수 없습니다.")
                 
-                # Get sales by region for this seller
-                s_region_metrics = s_data.groupby('지역')['실결제 금액'].sum().reset_index()
-                if s_region_metrics.empty: continue
-                
-                # Find Max Region
-                top_reg_row = s_region_metrics.loc[s_region_metrics['실결제 금액'].idxmax()]
-                max_share = (top_reg_row['실결제 금액'] / total_s_sales) * 100
-                
-                # Classification Logic
-                if max_share >= 50:
-                    reach_type = "🏰 로컬 스페셜리스트 (Local)"
-                    strategy = f"인접 지역({top_reg_row['지역']} 외)으로 타겟 확장 필요한 시점"
-                elif max_share >= 30:
-                    reach_type = "🌟 지역 강자 (Regional)"
-                    strategy = "거점 지역의 점유율을 방어하며 전국구 도약 준비"
-                else:
-                    reach_type = "🌏 전국구 플레이어 (National)"
-                    strategy = "특정 지역에 의존하지 않음. 물류 효율화 및 브랜드 강화"
-                    
-                reach_data.append({
-                    '셀러명': seller,
-                    '유형': reach_type,
-                    '주력 지역': f"{top_reg_row['지역']} ({max_share:.0f}%)",
-                    '제안 전략': strategy
-                })
-            
-            if reach_data:
-                reach_df = pd.DataFrame(reach_data)
-                
-                col_r1, col_r2 = st.columns([1, 2])
-                with col_r1:
-                    type_counts = reach_df['유형'].value_counts().reset_index()
-                    type_counts.columns = ['유형', 'Count']
-                    fig_type = px.pie(type_counts, values='Count', names='유형', title="셀러 유형 분포", hole=0.4)
-                    st.plotly_chart(fig_type, use_container_width=True)
-                
-                with col_r2:
-                    st.dataframe(reach_df, use_container_width=True, hide_index=True)
-            
         else:
-            st.warning("지역 데이터가 없어 상관관계를 분석할 수 없습니다.")
+            st.warning("주문번호 또는 상품명 데이터가 없어 장바구니 분석을 수행할 수 없습니다.")
 
         st.divider()
         
