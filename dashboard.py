@@ -424,6 +424,100 @@ elif "상품" in menu:
         fig_bar.update_traces(marker_color='#FF8C00')
         st.plotly_chart(fig_bar, use_container_width=True)
 
+    st.divider()
+
+    # [Advanced Product Analysis]
+    st.subheader("🔬 심층 상품 분석 (Advanced Product Analysis)")
+
+    # Data Preparation per Product
+    if not df_filtered.empty:
+        prod_stats = df_filtered.groupby('상품명').agg({
+            '실결제 금액': 'sum', 
+            '주문수량': 'sum',
+            '주문자명': 'nunique' # Number of Buyers
+        }).reset_index()
+        
+        # Calculate Margin if available
+        if '마진' in df_filtered.columns:
+            margin_sum = df_filtered.groupby('상품명')['마진'].sum().reset_index()
+            prod_stats = prod_stats.merge(margin_sum, on='상품명', how='left')
+        else:
+            prod_stats['마진'] = 0
+            
+        # 1. ABC Analysis (Pareto)
+        prod_stats = prod_stats.sort_values('실결제 금액', ascending=False)
+        prod_stats['Cumulative Sales'] = prod_stats['실결제 금액'].cumsum()
+        prod_stats['Cumulative Perc'] = prod_stats['Cumulative Sales'] / prod_stats['실결제 금액'].sum()
+        
+        def assign_grade(row):
+            if row['Cumulative Perc'] <= 0.8: return 'A (핵심)'
+            elif row['Cumulative Perc'] <= 0.95: return 'B (일반)'
+            else: return 'C (부진)'
+            
+        prod_stats['Grade'] = prod_stats.apply(assign_grade, axis=1)
+        
+        # Summary of Grades
+        grade_counts = prod_stats['Grade'].value_counts().sort_index()
+        
+        st.markdown("##### 1. ABC 등급 분석 (Pareto Principle)")
+        st.caption("매출 기여도 상위 80%를 A등급, 차위 15%를 B등급, 하위 5%를 C등급으로 분류합니다.")
+        
+        col_abc1, col_abc2 = st.columns([1, 2])
+        
+        with col_abc1:
+            st.write("**등급별 상품 수**")
+            st.dataframe(grade_counts, use_container_width=True)
+            
+        with col_abc2:
+            fig_pareto = px.bar(
+                prod_stats.head(20), 
+                x='상품명', 
+                y='실결제 금액',
+                color='Grade',
+                title='Top 20 상품 매출 기여도',
+                color_discrete_map={'A (핵심)': '#E74C3C', 'B (일반)': '#F1C40F', 'C (부진)': '#95A5A6'}
+            )
+            st.plotly_chart(fig_pareto, use_container_width=True)
+
+        st.divider()
+        
+        # 2. Product Performance Matrix (BCG Matrix Style)
+        st.markdown("##### 2. 상품 포트폴리오 매트릭스")
+        st.caption("X축: 주문 수량(인기), Y축: 총 매출액(수익규모), 원 크기: 마진(수익성)")
+        
+        fig_matrix = px.scatter(
+            prod_stats,
+            x='주문수량',
+            y='실결제 금액',
+            size='마진' if prod_stats['마진'].sum() > 0 else '실결제 금액',
+            color='Grade',
+            hover_name='상품명',
+            text='상품명',
+            log_x=True, # Log scale usually better for sales data
+            log_y=True,
+            title="Sales Quantity vs Revenue Amount",
+            color_discrete_map={'A (핵심)': '#E74C3C', 'B (일반)': '#F1C40F', 'C (부진)': '#95A5A6'}
+        )
+        fig_matrix.update_traces(textposition='top center')
+        st.plotly_chart(fig_matrix, use_container_width=True)
+        
+        # 3. Detailed Data Table
+        st.markdown("##### 3. 상품별 상세 지표")
+        
+        # Add basic formatting
+        display_df = prod_stats.copy()
+        display_df['실결제 금액'] = display_df['실결제 금액'].apply(lambda x: f"{x:,.0f}")
+        display_df['마진'] = display_df['마진'].apply(lambda x: f"{x:,.0f}")
+        
+        st.dataframe(
+            display_df[['Grade', '상품명', '실결제 금액', '주문수량', '주문자명', '마진', 'Cumulative Perc']],
+            use_container_width=True,
+            hide_index=True
+        )
+
+    else:
+        st.info("분석할 상품 데이터가 없습니다.")
+
 elif "채널" in menu:
     # [View 3] 📢 채널 및 지역 Analysis
     st.header("📢 채널 및 지역 분석 (Channel & Region)")
