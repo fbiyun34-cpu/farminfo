@@ -919,6 +919,26 @@ elif "셀러" in menu:
                  st.success("최근 30일 이내 활동하지 않은 셀러가 없습니다.")
         
         st.divider()
+
+        # [Restored] 5. Monthly Seller Inflow & Churn Trend
+        st.subheader("📆 월별 셀러 유입/이탈 추이")
+        
+        # Inflow Logic (First Order Date)
+        first_dates = df_filtered.groupby('셀러명')['주문일'].min().reset_index()
+        first_dates['Month'] = first_dates['주문일'].dt.to_period('M').astype(str)
+        new_counts = first_dates.groupby('Month')['셀러명'].count().reset_index()
+        
+        fig_inflow = px.bar(
+            new_counts, 
+            x='Month', 
+            y='셀러명', 
+            title="월별 신규 셀러 유입 수 (New Sellers)", 
+            labels={'셀러명': '신규 셀러 수', 'Month': '월'},
+            color_discrete_sequence=['#2ECC71']
+        )
+        st.plotly_chart(fig_inflow, use_container_width=True)
+        
+        st.divider()
         
         # Detailed Table
         st.markdown("##### 📋 전체 셀러 상세 지표")
