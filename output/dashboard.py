@@ -552,37 +552,71 @@ elif "채널" in menu:
             gap_ops = gap_df[gap_df['실결제 금액_Target'] < gap_df['실결제 금액_Bench'] * 0.1]
             
             if not gap_ops.empty:
-                st.warning(f"🚨 **'{target_region}'에서 놓치고 있는 히트 상품**")
-                st.write(f"서울에서는 인기가 많지만, {target_region}에서는 판매가 저조한 상품들입니다. 프로모션을 고려해보세요.")
+                st.warning(f"🚨 **'{target_region}'에서 놓치고 있는 히트 상품 (Top 3)**")
+                st.write(f"**{benchmark_region}**에서는 베스트셀러지만, **{target_region}**에서는 매출이 저조한 상품들입니다.")
+                
+                # Top 3 Selection
+                top_gaps = gap_ops.head(3)
                 
                 # Visualization
                 fig_gap = go.Figure()
                 fig_gap.add_trace(go.Bar(
-                    y=gap_ops['상품명'], 
-                    x=gap_ops['실결제 금액_Bench'], 
+                    y=top_gaps['상품명'], 
+                    x=top_gaps['실결제 금액_Bench'], 
                     orientation='h', 
-                    name=benchmark_region,
+                    name=f"{benchmark_region} (Benchmark)",
                     marker_color='#d3d3d3'
                 ))
                 fig_gap.add_trace(go.Bar(
-                    y=gap_ops['상품명'], 
-                    x=gap_ops['실결제 금액_Target'], 
+                    y=top_gaps['상품명'], 
+                    x=top_gaps['실결제 금액_Target'], 
                     orientation='h', 
-                    name=target_region,
+                    name=f"{target_region} (Target)",
                     marker_color='#FF4B4B'
                 ))
                 fig_gap.update_layout(title="매출 격차 (Potential Gap)", barmode='overlay')
                 st.plotly_chart(fig_gap, use_container_width=True)
                 
-                # Action Plan Text
-                top_opp = gap_ops.iloc[0]
-                st.success(f"""
-                **💡 추천 전략:**
-                - **'{top_opp['상품명']}'** 상품을 **{target_region}** 지역 타겟 광고로 노출하세요.
-                - {benchmark_region}에서는 이미 검증된 상품이므로, 노출만 늘리면 매출 상승 가능성이 높습니다.
+                # Action Plan & Revenue Calculation
+                # Assumption: Target region can achieve 30% of Benchmark's sales volume for these items
+                # Normalization factor: (Target Total Orders / Benchmark Total Orders)
+                
+                bench_total_orders = bench_df['주문수량'].sum()
+                target_total_orders = target_df['주문수량'].sum()
+                
+                # Scale factor based on market size difference
+                scale_factor = (target_total_orders / bench_total_orders) if bench_total_orders > 0 else 0
+                
+                total_pot_rev = 0
+                
+                st.markdown("### 💡 액션 플랜 및 기대 수익")
+                for index, row in top_gaps.iterrows():
+                    item_name = row['상품명']
+                    bench_sales = row['실결제 금액_Bench']
+                    
+                    # Target Potential = Benchmark Sales * Scale Factor * Efficiency Assumption (30%)
+                    # If scale factor is too small, we assume at least 10% of benchmark absolute value as a floor for potential
+                    potential_rev = bench_sales * scale_factor * 0.5 # 50% efficiency of benchmark adjusted by size
+                    
+                    # Floor: If market size is very different, just take 5% of benchmark raw sales
+                    floor_rev = bench_sales * 0.05
+                    estimated_rev = max(potential_rev, floor_rev)
+                    
+                    total_pot_rev += estimated_rev
+                    
+                    st.success(f"""
+                    **🎯 추천 {index+1}: {item_name}**
+                    - **전략**: '{target_region}' 지역 타겟 광고 및 프로모션 진행
+                    - **예상 월 매출 효과**: +{estimated_rev:,.0f}원 (보수적 추정)
+                    """)
+                
+                st.info(f"""
+                **💰 총 기대 수익:** 상위 3개 상품을 {target_region}에 성공적으로 안착시킬 경우, 
+                월 약 **+{total_pot_rev:,.0f}원**의 추가 매출이 기대됩니다.
                 """)
+
             else:
-                st.info(f"{target_region}은(는) {benchmark_region}의 인기 상품 트렌드를 잘 따라가고 있습니다.")
+                st.info(f"{target_region}은(는) {benchmark_region}의 인기 상품 트렌드를 잘 따라가고 있습니다. 특별한 격차가 없습니다.")
 
 elif "고객" in menu:
     # [View 4] 👥 고객 분석 Analysis
