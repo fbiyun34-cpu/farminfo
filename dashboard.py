@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
 
@@ -819,32 +820,122 @@ elif "고객" in menu:
     st.dataframe(df_filtered.head(100), use_container_width=True)
 
 elif "셀러" in menu:
-    # [View 5] 📈 셀러 분석 Analysis
-    st.header("📈 셀러 성과 및 유입 분석")
+    # [View 5] 📈 셀러 분석 Analysis (Advanced)
+    st.header("📈 셀러 성과 및 관리 (Seller Management)")
     
-    col_sel1, col_sel2 = st.columns(2)
-    
-    # 셀러별 매출 Top 10
-    with col_sel1:
-        top_sellers = df_filtered.groupby('셀러명')['실결제 금액'].sum().nlargest(10).reset_index()
-        fig_seller = px.bar(top_sellers, x='셀러명', y='실결제 금액', title="Top 10 셀러 매출", color='실결제 금액')
-        st.plotly_chart(fig_seller, use_container_width=True)
-    
-    # 셀러 유입/이탈 (월별)
-    with col_sel2:
-        # Simple logic for acquisition based on first order
-        first_dates = df_filtered.groupby('셀러명')['주문일'].min().reset_index()
-        first_dates['Month'] = first_dates['주문일'].dt.to_period('M').astype(str)
-        new_counts = first_dates.groupby('Month')['셀러명'].count().reset_index()
-        fig_inflow = px.bar(new_counts, x='Month', y='셀러명', title="월별 신규 셀러 유입", color_discrete_sequence=['#2ECC71'])
-        st.plotly_chart(fig_inflow, use_container_width=True)
+    if not df_filtered.empty:
+        # Pre-calc: Last Date in data
+        max_date = df_filtered['주문일'].max()
+        
+        # 1. Seller Metrics Calculation
+        seller_stats = df_filtered.groupby('셀러명').agg({
+            '실결제 금액': 'sum',
+            '주문수량': 'sum',
+            '주문번호': 'count', # Order Count
+            '주문일': 'max' # Last Active
+        }).reset_index()
+        
+        seller_stats.rename(columns={'주문번호': '주문건수', '주문일': '최근활동일'}, inplace=True)
+        seller_stats['객단가(AOV)'] = seller_stats['실결제 금액'] / seller_stats['주문건수']
+        
+        # 2. Seller Segmentation (S/A/B Grade)
+        seller_stats = seller_stats.sort_values('실결제 금액', ascending=False)
+        seller_stats['Cumulative Sales'] = seller_stats['실결제 금액'].cumsum()
+        seller_stats['Cumulative Perc'] = seller_stats['Cumulative Sales'] / seller_stats['실결제 금액'].sum()
+        
+        def assign_seller_grade(row):
+            if row['Cumulative Perc'] <= 0.10: return 'S (최상위)'
+            elif row['Cumulative Perc'] <= 0.40: return 'A (우수)'
+            else: return 'B (일반)'
+            
+        seller_stats['등급'] = seller_stats.apply(assign_seller_grade, axis=1)
+        
+        # 3. Growth Rate (Last 30 Days vs Previous 30 Days)
+        t_current_start = max_date - timedelta(days=30)
+        t_prev_start = t_current_start - timedelta(days=30)
+        
+        df_current = df_filtered[df_filtered['주문일'] >= t_current_start]
+        df_prev = df_filtered[(df_filtered['주문일'] < t_current_start) & (df_filtered['주문일'] >= t_prev_start)]
+        
+        curr_sales = df_current.groupby('셀러명')['실결제 금액'].sum().reset_index().rename(columns={'실결제 금액': 'CurrentSales'})
+        prev_sales = df_prev.groupby('셀러명')['실결제 금액'].sum().reset_index().rename(columns={'실결제 금액': 'PrevSales'})
+        
+        growth_df = curr_sales.merge(prev_sales, on='셀러명', how='outer').fillna(0)
+        growth_df['GrowthRate'] = ((growth_df['CurrentSales'] - growth_df['PrevSales']) / growth_df['PrevSales'].replace(0, 1)) * 100
+        
+        # Merge Growth into Stats
+        seller_stats = seller_stats.merge(growth_df[['셀러명', 'GrowthRate']], on='셀러명', how='left').fillna(0)
 
-    # 셀러 상세 검색
-    st.divider()
-    sellers = df_filtered['셀러명'].unique()
-    choice = st.selectbox("셀러 상세 분석", options=sellers)
-    if choice:
-        seller_df = df_filtered[df_filtered['셀러명'] == choice]
-        st.write(f"**{choice}** 님의 총 매출: {seller_df['실결제 금액'].sum():,.0f}원 (총 {len(seller_df)}건 주문)")
-        daily_trend = seller_df.groupby('주문일')['실결제 금액'].sum().reset_index()
-        st.line_chart(daily_trend.set_index('주문일'))
+        # 4. Churn Risk (Dormant > 30 Days)
+        seller_stats['DaysSinceActive'] = (max_date - seller_stats['최근활동일']).dt.days
+        seller_stats['Status'] = seller_stats['DaysSinceActive'].apply(lambda x: '⚠️ 휴면 위험' if x >= 30 else '✅ 활동 중')
+        
+        # --- UI Rendering ---
+        
+        # Summary Metrics
+        st.subheader("📊 셀러 현황 개요")
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        
+        with col_s1:
+            st.metric("총 활동 셀러", f"{len(seller_stats)}명")
+        with col_s2:
+            s_grade_count = len(seller_stats[seller_stats['등급'].str.contains('S')])
+            st.metric("S등급(상위 10%)", f"{s_grade_count}명")
+        with col_s3:
+            rising_stars = len(seller_stats[seller_stats['GrowthRate'] >= 20])
+            st.metric("급성장 셀러 (MoM +20%↑)", f"{rising_stars}명")
+        with col_s4:
+            churn_risk = len(seller_stats[seller_stats['Status'].str.contains('위험')])
+            st.metric("이탈 위험 (30일 무실적)", f"{churn_risk}명", delta=-churn_risk, delta_color="inverse")
+
+        st.divider()
+
+        col_main1, col_main2 = st.columns([1, 1])
+        
+        with col_main1:
+            st.markdown("##### 🚀 라이징 스타 (Top Growth)")
+            # Filter: Min 10 orders to avoid noise
+            rising_df = seller_stats[seller_stats['주문건수'] >= 10].sort_values('GrowthRate', ascending=False).head(5)
+            if not rising_df.empty:
+                st.dataframe(
+                    rising_df[['등급', '셀러명', 'GrowthRate', '실결제 금액']].style.format({
+                        'GrowthRate': "{:+.1f}%", 
+                        '실결제 금액': "{:,.0f}"
+                    }),
+                    use_container_width=True, hide_index=True
+                )
+            else:
+                st.info("조건을 만족하는 성장 셀러가 없습니다.")
+                
+        with col_main2:
+             st.markdown("##### ⚠️ 이탈 위험군 (Dormant)")
+             dormant_df = seller_stats[seller_stats['Status'].str.contains('위험')].sort_values('DaysSinceActive', ascending=False).head(5)
+             if not dormant_df.empty:
+                 st.dataframe(
+                    dormant_df[['등급', '셀러명', '최근활동일', 'DaysSinceActive']],
+                    use_container_width=True, hide_index=True
+                )
+             else:
+                 st.success("최근 30일 이내 활동하지 않은 셀러가 없습니다.")
+        
+        st.divider()
+        
+        # Detailed Table
+        st.markdown("##### 📋 전체 셀러 상세 지표")
+        
+        # Clean col names for display
+        display_cols = ['등급', '셀러명', '실결제 금액', 'GrowthRate', '주문건수', '객단가(AOV)', '최근활동일', 'Status']
+        
+        st.dataframe(
+            seller_stats[display_cols].style.format({
+                '실결제 금액': "{:,.0f}",
+                'GrowthRate': "{:+.1f}%",
+                '주문건수': "{:,.0f}",
+                '객단가(AOV)': "{:,.0f}"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+        
+    else:
+        st.warning("분석할 셀러 데이터가 없습니다.")
