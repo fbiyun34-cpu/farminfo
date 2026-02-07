@@ -1104,6 +1104,71 @@ elif "셀러" in menu:
                 st.info("데이터가 부족하여 유입 추이를 분석할 수 없습니다.")
         
         st.divider()
+
+        # 7. Seller-Region Correlation Analysis [NEW]
+        st.subheader("🗺️ 셀러-지역 상관관계 (Regional Dominance)")
+        
+        if '지역' in df_filtered.columns:
+            # Prepare Data: Sales by Seller & Region
+            # Filter Top 10 Sellers & Top 10 Regions to prevent overcrowding
+            top_sellers_list = df_filtered.groupby('셀러명')['실결제 금액'].sum().nlargest(10).index
+            top_regions_list = df_filtered.groupby('지역')['실결제 금액'].sum().nlargest(10).index
+            
+            sr_df = df_filtered[
+                (df_filtered['셀러명'].isin(top_sellers_list)) & 
+                (df_filtered['지역'].isin(top_regions_list))
+            ]
+            
+            sr_pivot = sr_df.pivot_table(index='셀러명', columns='지역', values='실결제 금액', aggfunc='sum', fill_value=0)
+            
+            # 7-1. Heatmap
+            fig_sr = px.imshow(
+                sr_pivot,
+                labels=dict(x="지역", y="셀러명", color="매출액"),
+                x=sr_pivot.columns,
+                y=sr_pivot.index,
+                color_continuous_scale='Reds',
+                aspect='auto'
+            )
+            fig_sr.update_layout(title="Top 10 셀러의 지역별 매출 집중도")
+            st.plotly_chart(fig_sr, use_container_width=True)
+            
+            # 7-2. Dominant Sellers (Local Kings)
+            st.markdown("##### 👑 지역별 지배자 (Local King)")
+            
+            # Calculate market share per region
+            region_totals = df_filtered.groupby('지역')['실결제 금액'].sum()
+            dominant_list = []
+            
+            for region in top_regions_list:
+                region_data = df_filtered[df_filtered['지역'] == region]
+                if region_data.empty: continue
+                
+                top_seller_in_region = region_data.groupby('셀러명')['실결제 금액'].sum().idxmax()
+                top_seller_sales = region_data.groupby('셀러명')['실결제 금액'].sum().max()
+                total_region_sales = region_totals[region]
+                
+                share = (top_seller_sales / total_region_sales) * 100
+                
+                # Threshold for dominance: > 20% share (adjustable)
+                if share >= 20: 
+                    dominant_list.append({
+                        '지역': region,
+                        '지배자(셀러)': top_seller_in_region,
+                        '점유율': f"{share:.1f}%",
+                        '매출': f"{top_seller_sales:,.0f}원"
+                    })
+            
+            if dominant_list:
+                st.success(f"총 {len(dominant_list)}개 지역에서 압도적 점유율(20% 이상)을 가진 '로컬 킹' 셀러가 발견되었습니다.")
+                st.dataframe(pd.DataFrame(dominant_list), use_container_width=True)
+            else:
+                st.info("특정 지역을 독점(점유율 20% 이상)하는 셀러가 없습니다. 시장이 고르게 경쟁 중입니다.")
+                
+        else:
+            st.warning("지역 데이터가 없어 상관관계를 분석할 수 없습니다.")
+
+        st.divider()
         
         # Detailed Table
         st.markdown("##### 📋 전체 셀러 상세 지표")
