@@ -1164,7 +1164,61 @@ elif "셀러" in menu:
                 st.dataframe(pd.DataFrame(dominant_list), use_container_width=True)
             else:
                 st.info("특정 지역을 독점(점유율 20% 이상)하는 셀러가 없습니다. 시장이 고르게 경쟁 중입니다.")
+            
+            st.divider()
+
+            # 7-3. Seller Reach Inference (Local vs National) [NEW]
+            st.subheader("🚀 셀러 확장 단계 진단 (Seller Reach Inference)")
+            st.markdown("고객의 지역 분포를 기반으로 셀러의 **사업 확장 단계**를 추론하고, 맞춤 전략을 제안합니다.")
+            
+            reach_data = []
+            
+            # Analyze reach for Top 20 Sellers
+            target_sellers = df_filtered.groupby('셀러명')['실결제 금액'].sum().nlargest(20).index
+            
+            for seller in target_sellers:
+                s_data = df_filtered[df_filtered['셀러명'] == seller]
+                total_s_sales = s_data['실결제 금액'].sum()
                 
+                # Get sales by region for this seller
+                s_region_metrics = s_data.groupby('지역')['실결제 금액'].sum().reset_index()
+                if s_region_metrics.empty: continue
+                
+                # Find Max Region
+                top_reg_row = s_region_metrics.loc[s_region_metrics['실결제 금액'].idxmax()]
+                max_share = (top_reg_row['실결제 금액'] / total_s_sales) * 100
+                
+                # Classification Logic
+                if max_share >= 50:
+                    reach_type = "🏰 로컬 스페셜리스트 (Local)"
+                    strategy = f"인접 지역({top_reg_row['지역']} 외)으로 타겟 확장 필요한 시점"
+                elif max_share >= 30:
+                    reach_type = "🌟 지역 강자 (Regional)"
+                    strategy = "거점 지역의 점유율을 방어하며 전국구 도약 준비"
+                else:
+                    reach_type = "🌏 전국구 플레이어 (National)"
+                    strategy = "특정 지역에 의존하지 않음. 물류 효율화 및 브랜드 강화"
+                    
+                reach_data.append({
+                    '셀러명': seller,
+                    '유형': reach_type,
+                    '주력 지역': f"{top_reg_row['지역']} ({max_share:.0f}%)",
+                    '제안 전략': strategy
+                })
+            
+            if reach_data:
+                reach_df = pd.DataFrame(reach_data)
+                
+                col_r1, col_r2 = st.columns([1, 2])
+                with col_r1:
+                    type_counts = reach_df['유형'].value_counts().reset_index()
+                    type_counts.columns = ['유형', 'Count']
+                    fig_type = px.pie(type_counts, values='Count', names='유형', title="셀러 유형 분포", hole=0.4)
+                    st.plotly_chart(fig_type, use_container_width=True)
+                
+                with col_r2:
+                    st.dataframe(reach_df, use_container_width=True, hide_index=True)
+            
         else:
             st.warning("지역 데이터가 없어 상관관계를 분석할 수 없습니다.")
 
